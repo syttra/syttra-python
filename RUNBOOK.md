@@ -38,7 +38,18 @@ python -c "import syttra; print(syttra.__version__)"
 
 PyPI is **append-only** — never re-upload an old filename, never delete-and-replace. Bump the `version` in `pyproject.toml`, rebuild from a clean `dist/`, upload.
 
-When the real SDK lands (0.1.0), drop the `_placeholder_warning()` call from `src/syttra/__init__.py` along with the version bump.
+## Pre-flight (every release)
+
+```bash
+cd syttra-python
+source .venv-sdk/bin/activate
+pytest                          # all green
+ruff check src/ tests/          # clean
+ruff format --check src/ tests/ # clean
+mypy src/syttra                 # clean
+```
+
+Bump the version in `pyproject.toml` and `src/syttra/__init__.py`, add a `## [X.Y.Z]` section to `CHANGELOG.md`, commit. Then build + upload as above.
 
 ## Troubleshooting
 

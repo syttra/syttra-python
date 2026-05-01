@@ -1,27 +1,90 @@
-"""Syttra — placeholder.
+"""Syttra — the official Python SDK for `syttra.com <https://syttra.com>`_.
 
-This is a name-reservation release. The real Python SDK ships in
-0.1.0, see https://syttra.com/docs/sdk/python for status. Importing
-this version is intentionally near-empty so users who pip-installed
-the wrong package learn quickly.
+The minimal usage::
+
+    from syttra import Syttra
+
+    client = Syttra(api_key="sk_live_...")
+    job = client.create_job(url="https://example.com")
+    finished = client.wait_for_job(job.job_id)
+    result = client.get_job_result(finished.job_id)
+    print(result.body)
+
+See `the docs <https://syttra.com/docs/sdk/python>`_ for the full
+reference, including crawl modes, sitemap previews, and quota
+handling.
 """
 
-__version__ = "0.0.1"
+from __future__ import annotations
 
-_PLACEHOLDER_NOTICE = (
-    "syttra 0.0.x is a name-reservation placeholder. The real Python SDK "
-    "lands in 0.1.0 — see https://syttra.com/docs/sdk/python for status. "
-    "If you're hitting Syttra today, the REST API at https://api.syttra.com "
-    "works directly with `httpx` or `requests`."
+__version__ = "0.1.0"
+
+from ._client import DEFAULT_BASE_URL, Syttra
+from ._http import RetryPolicy
+from .errors import (
+    ApiError,
+    Conflict,
+    Forbidden,
+    InvalidRequest,
+    NotFound,
+    PayloadTooLarge,
+    QuotaExceeded,
+    RateLimited,
+    ServerError,
+    SyttraError,
+    TransportError,
+    Unauthorized,
+)
+from .models import (
+    CrawlMode,
+    ExportFormat,
+    Job,
+    JobCreated,
+    JobLinks,
+    JobList,
+    JobListItem,
+    JobProgress,
+    JobResult,
+    JobStatus,
+    Plan,
+    SitemapPreview,
+    Usage,
+    UsagePlan,
 )
 
-
-def _placeholder_warning() -> None:
-    """Emit a one-line warning so users know they're on the placeholder."""
-    import warnings
-
-    warnings.warn(_PLACEHOLDER_NOTICE, FutureWarning, stacklevel=2)
-
-
-# Fire the notice once on import so accidental users notice immediately.
-_placeholder_warning()
+__all__ = [
+    # client
+    "Syttra",
+    "RetryPolicy",
+    "DEFAULT_BASE_URL",
+    # errors
+    "ApiError",
+    "Conflict",
+    "Forbidden",
+    "InvalidRequest",
+    "NotFound",
+    "PayloadTooLarge",
+    "QuotaExceeded",
+    "RateLimited",
+    "ServerError",
+    "SyttraError",
+    "TransportError",
+    "Unauthorized",
+    # models
+    "CrawlMode",
+    "ExportFormat",
+    "Job",
+    "JobCreated",
+    "JobLinks",
+    "JobList",
+    "JobListItem",
+    "JobProgress",
+    "JobResult",
+    "JobStatus",
+    "Plan",
+    "SitemapPreview",
+    "Usage",
+    "UsagePlan",
+    # version
+    "__version__",
+]
