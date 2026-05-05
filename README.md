@@ -101,17 +101,72 @@ print(f"On the {usage.plan.name} plan" if usage.plan else "No plan assigned")
 
 `get_usage()` is also handy as a cheap "is my key valid?" check.
 
-## What's in v0.1
+## Watchers
 
-- Sync client (`Syttra`) covering jobs, usage, sitemap preview, and the public plans list.
+A watcher pins a CSS or XPath selector on a public URL, polls it on a cron schedule, and notifies you (email, webhook, or both) when the extracted value matches a trigger condition.
+
+```python
+from syttra import Syttra
+
+with Syttra(api_key="sk_live_...") as client:
+    # Verify your selector before saving (stateless dry-run).
+    preview = client.test_watcher_selector(
+        url="https://example.com/pricing",
+        selector=".pro .price",
+    )
+    print(preview.value)  # "€29 / month"
+
+    # Create a watcher that emails you when the price drops below 29.
+    w = client.create_watcher(
+        name="Pro plan price",
+        url="https://example.com/pricing",
+        selector=".pro .price",
+        schedule_cron="*/15 * * * *",       # every 15 min, UTC
+        trigger_type="below",
+        trigger_value="29",                  # parsed tolerant of EU/US formats
+        notify_email_enabled=True,
+        webhook_url="https://hooks.example.com/syttra",  # optional
+    )
+
+    # Inspect the timeline (successes + failures, newest first).
+    history = client.get_watcher_history(w.id)
+    for snap in history.items:
+        if snap.error:
+            print("failed:", snap.error)
+        else:
+            print(snap.fetched_at, snap.value)
+```
+
+Trigger conditions fire **edge-only**: a `below 1.30` watcher fires once when the value crosses from `≥1.30` to `<1.30`, then stays quiet until it goes back up and crosses down again. Pick from `changes` (default), `below`, `above`, `contains`, or `not_contains`.
+
+Plan-tier limits surface as typed errors:
+
+```python
+from syttra import Forbidden, InvalidRequest
+
+try:
+    client.create_watcher(...)
+except Forbidden as e:
+    if e.code == "feature_not_in_plan":
+        print("Watchers are part of Pro — upgrade to start tracking.")
+    elif e.code == "watcher_limit_reached":
+        print("You're at your plan's watcher cap — delete one or upgrade.")
+except InvalidRequest as e:
+    if e.code == "schedule_too_fast":
+        print("Pick a slower cadence, or upgrade for tighter polling.")
+```
+
+## What's in v0.2
+
+- Sync client (`Syttra`) covering jobs, usage, sitemap preview, the public plans list, and watchers (CRUD + history + selector preview + visual screenshot picker).
 - Typed Pydantic v2 response models — same shapes the API itself uses.
-- Structured exceptions per HTTP status (`Unauthorized`, `QuotaExceeded`, …).
+- Structured exceptions per HTTP status (`Unauthorized`, `QuotaExceeded`, `Forbidden`, …) with `.code` for branching on specific failure reasons (e.g. `feature_not_in_plan` vs `watcher_limit_reached`).
 - Automatic retries with exponential backoff and `Retry-After` support.
 - `wait_for_job` helper for the polling pattern.
 
 ## What's coming
 
-- **Async client** in v0.2 — same API, `AsyncSyttra` with `await`.
+- **Async client** — same API, `AsyncSyttra` with `await`.
 - **OpenAPI-generated models** so the SDK never lags the API.
 - **Dashboard surface** (`/v1/account/api-keys`) once we open Clerk JWT auth to non-browser callers.
 
