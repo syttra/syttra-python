@@ -17,7 +17,7 @@ handling.
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from ._client import DEFAULT_BASE_URL, Syttra
 from ._http import RetryPolicy
@@ -47,9 +47,18 @@ from .models import (
     JobResult,
     JobStatus,
     Plan,
+    ScreenshotPickerElement,
+    ScreenshotPickerResult,
+    SelectorType,
     SitemapPreview,
+    TestSelectorResult,
+    TriggerType,
     Usage,
     UsagePlan,
+    Watcher,
+    WatcherHistory,
+    WatcherList,
+    WatcherSnapshot,
 )
 
 __all__ = [
@@ -82,9 +91,18 @@ __all__ = [
     "JobResult",
     "JobStatus",
     "Plan",
+    "ScreenshotPickerElement",
+    "ScreenshotPickerResult",
+    "SelectorType",
     "SitemapPreview",
+    "TestSelectorResult",
+    "TriggerType",
     "Usage",
     "UsagePlan",
+    "Watcher",
+    "WatcherHistory",
+    "WatcherList",
+    "WatcherSnapshot",
     # version
     "__version__",
 ]

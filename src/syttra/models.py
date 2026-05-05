@@ -188,7 +188,14 @@ class SitemapPreview(BaseModel):
 
 
 class Plan(BaseModel):
-    """Public pricing plan as exposed at ``GET /v1/plans``."""
+    """Public pricing plan as exposed at ``GET /v1/plans``.
+
+    Watcher limits are exposed alongside the page quota so SDK
+    callers can render their own pricing UI without a second call.
+    Older API versions may omit these — defaults reflect "no
+    watchers" / "15 minutes minimum", same as the migration's
+    fail-closed defaults.
+    """
 
     slug: str
     name: str
@@ -196,8 +203,127 @@ class Plan(BaseModel):
     price_eur_monthly_cents: int | None
     monthly_page_quota: int
     max_concurrent_jobs: int
+    watchers_max_count: int = 0
+    watchers_min_interval_seconds: int = 900
     features: list[str]
     sort_order: int
+
+
+# ---------------------------------------------------------------------------
+# Watchers
+# ---------------------------------------------------------------------------
+
+
+SelectorType = Literal["css", "xpath"]
+TriggerType = Literal["changes", "below", "above", "contains", "not_contains"]
+
+
+class Watcher(BaseModel):
+    """A configured page-value watcher.
+
+    The ``last_*`` fields are the worker's denormalised view of the
+    most recent successful tick. Failed ticks don't update
+    ``last_value`` (so a transient outage doesn't fire spurious
+    change-events); they appear in :class:`WatcherHistory` with
+    ``error`` populated.
+    """
+
+    id: UUID
+    name: str
+    url: str
+    selector: str
+    selector_type: SelectorType
+    schedule_cron: str
+    webhook_url: str | None
+    trigger_type: TriggerType
+    trigger_value: str | None
+    notify_email_enabled: bool
+    last_value: str | None
+    last_checked_at: datetime | None
+    last_changed_at: datetime | None
+    created_at: datetime
+
+
+class WatcherList(BaseModel):
+    """Page of watchers from ``list_watchers``."""
+
+    items: list[Watcher]
+    next_cursor: str | None
+    has_more: bool
+
+
+class WatcherSnapshot(BaseModel):
+    """One row in a watcher's history.
+
+    Successful ticks have ``value`` populated and ``error=None``;
+    failed ticks are the inverse — the dashboard timeline shows both
+    so a "selector broke for 3 days then recovered" pattern is
+    visible without inferring it from gaps.
+    """
+
+    id: UUID
+    value: str | None
+    content_hash: str | None
+    fetched_at: datetime
+    error: str | None
+
+
+class WatcherHistory(BaseModel):
+    """Page of snapshots from ``get_watcher_history`` (newest first)."""
+
+    items: list[WatcherSnapshot]
+    next_cursor: str | None
+    has_more: bool
+
+
+class TestSelectorResult(BaseModel):
+    """One-shot dry-run result from ``test_watcher_selector``.
+
+    ``value`` is ``None`` when the selector matched nothing.
+    ``match_count`` surfaces "your selector returned 47 elements" so
+    the user can tighten — only the first match's text becomes the
+    watcher's tracked value once saved.
+    """
+
+    value: str | None
+    match_count: int
+    html_preview: str | None
+    final_url: str
+    content_type: str | None
+
+
+class ScreenshotPickerElement(BaseModel):
+    """One clickable zone on the screenshot picker.
+
+    Coordinates are in screenshot pixel space (page-relative,
+    multiplied by device pixel ratio), so a single CSS scale factor maps every
+    overlay correctly regardless of how the image is sized in the
+    consuming UI.
+    """
+
+    selector: str
+    x: int
+    y: int
+    width: int
+    height: int
+    text: str
+    tag: str
+
+
+class ScreenshotPickerResult(BaseModel):
+    """Result of ``pick_watcher_screenshot``.
+
+    ``screenshot_base64`` is a PNG screenshot of the page, encoded
+    as base64. Build a data URL like
+    ``data:image/png;base64,{screenshot_base64}`` to render it in a
+    browser, or :func:`base64.b64decode` to write to disk.
+    """
+
+    screenshot_base64: str
+    screenshot_width: int
+    screenshot_height: int
+    final_url: str
+    elements: list[ScreenshotPickerElement]
 
 
 __all__ = [
@@ -212,7 +338,16 @@ __all__ = [
     "JobResult",
     "JobStatus",
     "Plan",
+    "ScreenshotPickerElement",
+    "ScreenshotPickerResult",
+    "SelectorType",
     "SitemapPreview",
+    "TestSelectorResult",
+    "TriggerType",
     "Usage",
     "UsagePlan",
+    "Watcher",
+    "WatcherHistory",
+    "WatcherList",
+    "WatcherSnapshot",
 ]

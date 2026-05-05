@@ -21,8 +21,15 @@ from .models import (
     JobResult,
     JobStatus,
     Plan,
+    ScreenshotPickerResult,
+    SelectorType,
     SitemapPreview,
+    TestSelectorResult,
+    TriggerType,
     Usage,
+    Watcher,
+    WatcherHistory,
+    WatcherList,
 )
 
 DEFAULT_BASE_URL = "https://api.syttra.com"
@@ -268,6 +275,198 @@ class Syttra:
             params["limit"] = limit
         response = self._transport.request("GET", "/v1/sitemap/preview", params=params)
         return SitemapPreview.model_validate(response.json())
+
+    # ---- watchers ------------------------------------------------------
+
+    def list_watchers(self, *, cursor: str | None = None) -> WatcherList:
+        """Page through your watchers (newest first).
+
+        Page size is fixed at 50 server-side. Pass the previous
+        response's ``next_cursor`` to get the next page; the loop
+        ends when ``has_more`` is False.
+        """
+        params = {"cursor": cursor} if cursor is not None else None
+        response = self._transport.request("GET", "/v1/watchers", params=params)
+        return WatcherList.model_validate(response.json())
+
+    def get_watcher(self, watcher_id: str | UUID) -> Watcher:
+        """Fetch a single watcher by id.
+
+        Raises :class:`syttra.NotFound` for unknown ids and for
+        watchers owned by a different user (the API returns 404 not
+        403 to avoid leaking watcher IDs across tenants).
+        """
+        response = self._transport.request("GET", f"/v1/watchers/{watcher_id}")
+        return Watcher.model_validate(response.json())
+
+    def create_watcher(
+        self,
+        *,
+        name: str,
+        url: str,
+        selector: str,
+        selector_type: SelectorType = "css",
+        schedule_cron: str = "*/15 * * * *",
+        trigger_type: TriggerType = "changes",
+        trigger_value: str | None = None,
+        notify_email_enabled: bool = False,
+        webhook_url: str | None = None,
+    ) -> Watcher:
+        """Create a watcher.
+
+        Pin a CSS or XPath selector on a public URL. Syttra polls
+        on ``schedule_cron`` and fires a notification when the
+        trigger condition matches.
+
+        Trigger semantics are **edge-only**: a ``below 1.30`` watcher
+        fires once when the value crosses from ``>=1.30`` to
+        ``<1.30``, then stays quiet until the value crosses back
+        and down again. ``trigger_value`` is required for everything
+        except ``trigger_type='changes'``.
+
+        Plan-gating errors:
+        - :class:`syttra.Forbidden` (``code=feature_not_in_plan``) —
+          Free tier doesn't include watchers.
+        - :class:`syttra.Forbidden` (``code=watcher_limit_reached``) —
+          you're at your plan's count cap.
+        - :class:`syttra.InvalidRequest` (``code=schedule_too_fast``) —
+          the cron's smallest gap is below your plan's minimum.
+        """
+        body: dict[str, Any] = {
+            "name": name,
+            "url": url,
+            "selector": selector,
+            "selector_type": selector_type,
+            "schedule_cron": schedule_cron,
+            "trigger_type": trigger_type,
+            "notify_email_enabled": notify_email_enabled,
+        }
+        if trigger_value is not None:
+            body["trigger_value"] = trigger_value
+        if webhook_url is not None:
+            body["webhook_url"] = webhook_url
+
+        response = self._transport.request("POST", "/v1/watchers", json_body=body)
+        return Watcher.model_validate(response.json())
+
+    def update_watcher(
+        self,
+        watcher_id: str | UUID,
+        *,
+        name: str | None = None,
+        url: str | None = None,
+        selector: str | None = None,
+        selector_type: SelectorType | None = None,
+        schedule_cron: str | None = None,
+        trigger_type: TriggerType | None = None,
+        trigger_value: str | None = None,
+        notify_email_enabled: bool | None = None,
+        webhook_url: str | None = None,
+        clear_webhook: bool = False,
+    ) -> Watcher:
+        """Partial update — only the fields you pass get changed.
+
+        The trigger-pair invariant ("non-``changes`` trigger needs a
+        value") is checked **post-merge** server-side, so you can
+        change just the threshold without re-sending the trigger
+        type.
+
+        Two ways to clear the webhook URL:
+        - ``webhook_url=None`` — explicit JSON null over the wire.
+        - ``clear_webhook=True`` — sets the dedicated server-side
+          sentinel; equivalent for the API but useful when your
+          codepath finds it easier to pass a bool than to disambiguate
+          "not set" from "set to null".
+        """
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if url is not None:
+            body["url"] = url
+        if selector is not None:
+            body["selector"] = selector
+        if selector_type is not None:
+            body["selector_type"] = selector_type
+        if schedule_cron is not None:
+            body["schedule_cron"] = schedule_cron
+        if trigger_type is not None:
+            body["trigger_type"] = trigger_type
+        if trigger_value is not None:
+            body["trigger_value"] = trigger_value
+        if notify_email_enabled is not None:
+            body["notify_email_enabled"] = notify_email_enabled
+        if webhook_url is not None:
+            body["webhook_url"] = webhook_url
+        if clear_webhook:
+            body["webhook_url_clear"] = True
+
+        response = self._transport.request("PATCH", f"/v1/watchers/{watcher_id}", json_body=body)
+        return Watcher.model_validate(response.json())
+
+    def delete_watcher(self, watcher_id: str | UUID) -> None:
+        """Hard-delete a watcher. Cascades to its snapshot history."""
+        self._transport.request("DELETE", f"/v1/watchers/{watcher_id}")
+
+    def get_watcher_history(
+        self,
+        watcher_id: str | UUID,
+        *,
+        cursor: str | None = None,
+    ) -> WatcherHistory:
+        """Append-only snapshot timeline (newest first).
+
+        Every fetch — successful and failed — appears here. Failed
+        ticks have ``value=None`` and ``error`` populated, so the
+        consumer can render "selector broke for 3 days then
+        recovered" without inferring it from gaps.
+        """
+        params = {"cursor": cursor} if cursor is not None else None
+        response = self._transport.request(
+            "GET", f"/v1/watchers/{watcher_id}/history", params=params
+        )
+        return WatcherHistory.model_validate(response.json())
+
+    def test_watcher_selector(
+        self,
+        *,
+        url: str,
+        selector: str,
+        selector_type: SelectorType = "css",
+    ) -> TestSelectorResult:
+        """Stateless dry-run: fetch the URL, apply the selector,
+        return the first match's text + a small element preview.
+
+        No watcher is created; nothing is persisted. Useful before a
+        ``create_watcher`` call to verify the selector pins what you
+        want.
+        """
+        body = {
+            "url": url,
+            "selector": selector,
+            "selector_type": selector_type,
+        }
+        response = self._transport.request("POST", "/v1/watchers/test-selector", json_body=body)
+        return TestSelectorResult.model_validate(response.json())
+
+    def pick_watcher_screenshot(self, *, url: str) -> ScreenshotPickerResult:
+        """Render a URL in headless Chromium, return a screenshot
+        + bounding boxes of every visible text-bearing element with
+        a generated stable CSS selector.
+
+        Used by the dashboard's "Pick on screenshot" picker so
+        non-technical users can click a value instead of writing
+        CSS. The operation is heavy -- 5-15 s end-to-end -- so the
+        SDK doesn't apply its default 30s timeout to this call;
+        configure ``timeout=`` on the client if you want a different
+        budget.
+
+        Raises :class:`syttra.ServerError` (mapped from 503
+        ``picker_failed``) when the page didn't load, the picker
+        timed out, or Chromium failed to launch.
+        """
+        body = {"url": url}
+        response = self._transport.request("POST", "/v1/watchers/screenshot-picker", json_body=body)
+        return ScreenshotPickerResult.model_validate(response.json())
 
     # ---- plans (public) -----------------------------------------------
 
